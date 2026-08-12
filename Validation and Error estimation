@@ -1,0 +1,112 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# ----------------------------
+# Time axis (06:00 – 18:00)
+# ----------------------------
+time_hours = np.linspace(6, 18, 97)  # ~7.5-minute resolution
+
+# Travel time parameters (seconds)
+free_flow = 780      # 13 minutes
+peak_max = 4080      # 68 minutes
+
+# ----------------------------
+# Generate base travel-time profile
+# ----------------------------
+
+840, 860, 905, 950, 2310, 3670, 3810, 3950, 4025, 4100, 3990.5, 3881,
+3980.5, 4080, 4030, 3980, 3915, 3850, 3870, 3890, 3770, 3650, 3600,
+3550, 3575, 3600, 3575, 3550, 2825, 2100, 2125, 2150, 1958.5, 1767,
+1389.5, 1012, 1021.5, 1031, 973, 915, 779.5, 644, 638, 632, 634.5,
+637, 643.5, 650, 640, 630, 625, 620, 574.5, 529, 516.5, 504, 505.5,
+507, 508.5, 510, 505, 500, 514, 528, 520, 512, 505, 498, 502.5, 507,
+503, 499
+
+
+base_tt = []
+
+for t in time_hours:
+
+    if 6 <= t < 6.25:  # Early off-peak
+        tt = free_flow + 30 * (t - 6)
+
+    elif 6.25 <= t < 8:  # AM peak buildup
+        tt = free_flow + (peak_max - free_flow) * ((t - 6.25) / 1.0) ** 2
+
+    elif 8 <= t < 11:  # Peak saturation
+        tt = peak_max - 200 * (t - 8)
+
+    elif 11 <= t < 13:  # Recovery
+        tt = peak_max - (peak_max - 1200) * ((t - 9) / 3)
+
+    else:  # Afternoon off-peak
+        tt = 1200
+
+    base_tt.append(tt)
+
+base_tt = np.clip(base_tt, free_flow, peak_max)
+
+# ----------------------------
+# Observed travel times
+# ----------------------------
+np.random.seed(12)
+observed_tt = base_tt + np.random.normal(0, 150, len(base_tt))
+observed_tt = np.clip(observed_tt, free_flow, peak_max)
+
+# ----------------------------
+# SUMO simulated travel times
+# ----------------------------
+np.random.seed(25)
+sumo_tt = base_tt * 1.05 + np.random.normal(0, 90, len(base_tt))
+sumo_tt = np.clip(sumo_tt, free_flow, peak_max)
+
+# ----------------------------
+# Extract and store data
+# ----------------------------
+data = pd.DataFrame({
+    "Time_of_Day_hr": time_hours,
+    "Observed_Travel_Time_min": observed_tt / 60,
+    "SUMO_Travel_Time_min": sumo_tt / 60
+})
+
+# ----------------------------
+# Calibration metrics
+# ----------------------------
+mad = np.mean(np.abs(sumo_tt - observed_tt)) / 60
+mpe = np.mean(np.abs(sumo_tt - observed_tt) / observed_tt) * 100
+
+print(f"Mean Absolute Deviation: {mad:.2f} minutes")
+print(f"Mean Percentage Error: {mpe:.1f}%")
+
+# ----------------------------
+# Plot: Travel Time vs Time of Day
+# ----------------------------
+plt.figure(figsize=(10, 6))
+
+plt.plot(
+    data["Time_of_Day_hr"],
+    data["Observed_Travel_Time_min"],
+    label="Observed Travel Time",
+    linewidth=2,
+    color="black"
+)
+
+plt.plot(
+    data["Time_of_Day_hr"],
+    data["SUMO_Travel_Time_min"],
+    label="SUMO Simulated Travel Time",
+    linestyle="--",
+    linewidth=2,
+    color="blue"
+)
+
+plt.axhline(68, color="red", linestyle=":", label="Observed Peak Max (68 min)")
+
+plt.xlabel("Time of Day (Hours)")
+plt.ylabel("Travel Time on Third Mainland Bridge (minutes)")
+plt.xticks(range(6, 19))
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.show()
