@@ -1,0 +1,12 @@
+# ----------------------------
+# Validation metrics (SUMO vs LASMA)
+# ----------------------------
+rmse = np.sqrt(np.mean((sumo_t - LASMA_val) ** 2)) / 60
+mae = np.mean(np.abs(sumo_t - LASMA_val)) / 60
+mape = np.mean(np.abs(sumo_t - LASMA_val) / sumo_val) * 100
+bias = np.mean(sumo_t - LASMA_val) / 60
+
+print(f"Validation RMSE: {rmse:.2f} minutes")
+print(f"Validation MAE: {mae:.2f} minutes")
+print(f"Validation MAPE: {mape:.1f}%")
+print(f"Bias: {bias:.2f} minutes")
