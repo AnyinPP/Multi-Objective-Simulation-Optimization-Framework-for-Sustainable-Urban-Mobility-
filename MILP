@@ -18,7 +18,7 @@ import pulp
 #
 # IMPORTANT:
 # There is NO observed distinction between cars and buses
-# within the 129,874 vehicles.
+# within the 129,874 vehicles. This is for reference.
 #
 # Therefore, the model does NOT assume a pre-existing
 # car/bus split. Instead, it determines the required
