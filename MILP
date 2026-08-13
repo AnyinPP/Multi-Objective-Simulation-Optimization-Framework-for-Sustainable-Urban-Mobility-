@@ -1,0 +1,794 @@
+import pulp
+
+# ============================================================
+# MULTIMODAL TRAFFIC ALLOCATION MODEL
+# Third Mainland Bridge
+#
+# OBJECTIVE:
+# Redistribute the observed daily passenger demand of
+# 324,685 passengers/day among four modes:
+#
+#   1. Car
+#   2. Bus
+#   3. Train
+#   4. Ferry
+#
+# The observed 232,227 vehicles/day represents the TOTAL
+# ROAD VEHICLES observed on the bridge.
+#
+# IMPORTANT:
+# There is NO observed distinction between cars and buses
+# within the 129,874 vehicles.
+#
+# Therefore, the model does NOT assume a pre-existing
+# car/bus split. Instead, it determines the required
+# number of cars and buses from the optimized passenger
+# allocation.
+#
+# y_m = passengers assigned to mode m
+# x_m = vehicles/trips required for mode m
+# ============================================================
+
+
+# ============================================================
+# 1. CREATE OPTIMIZATION MODEL
+# ============================================================
+
+model = pulp.LpProblem(
+    "Third_Mainland_Bridge_Multimodal_Traffic_Allocation",
+    pulp.LpMinimize
+)
+
+
+# ============================================================
+# 2. OBSERVED DAILY DEMAND
+# ============================================================
+
+TOTAL_PASSENGERS = 324_685
+
+# IMPORTANT:
+# This is the TOTAL observed ROAD vehicles/day.
+# It does NOT distinguish between cars and buses.
+TOTAL_ROAD_VEHICLES = 129_874
+
+
+# Observed average occupancy across the entire observed
+# road vehicle fleet.
+observed_occupancy = TOTAL_PASSENGERS / TOTAL_ROAD_VEHICLES
+
+print(
+    "Observed average road-vehicle occupancy:",
+    round(observed_occupancy, 3)
+)
+
+
+# ============================================================
+# 3. MODES
+# ============================================================
+#
+# car   = private cars using the road route
+# bus   = buses using the road route
+# train = passengers diverted to rail
+# ferry = passengers diverted to water transport
+# ============================================================
+
+modes = ["car", "bus", "train", "ferry"]
+
+
+# ============================================================
+# 4. DECISION VARIABLES
+# ============================================================
+
+# ------------------------------------------------------------
+# Passenger allocation
+# ------------------------------------------------------------
+
+y_car = pulp.LpVariable(
+    "Passengers_Car",
+    lowBound=0,
+    cat="Continuous"
+)
+
+y_bus = pulp.LpVariable(
+    "Passengers_Bus",
+    lowBound=0,
+    cat="Continuous"
+)
+
+y_train = pulp.LpVariable(
+    "Passengers_Train",
+    lowBound=0,
+    cat="Continuous"
+)
+
+y_ferry = pulp.LpVariable(
+    "Passengers_Ferry",
+    lowBound=0,
+    cat="Continuous"
+)
+
+
+# ------------------------------------------------------------
+# Vehicle/trip allocation
+# ------------------------------------------------------------
+#
+# These are the number of vehicles/trips required to
+# carry the passengers assigned to each mode.
+#
+# They are NOT assumed to equal the observed 129,874
+# road vehicles.
+# ------------------------------------------------------------
+
+x_car = pulp.LpVariable(
+    "Vehicles_Car",
+    lowBound=0,
+    cat="Integer"
+)
+
+x_bus = pulp.LpVariable(
+    "Vehicles_Bus",
+    lowBound=0,
+    cat="Integer"
+)
+
+x_train = pulp.LpVariable(
+    "Vehicles_Train",
+    lowBound=0,
+    cat="Integer"
+)
+
+x_ferry = pulp.LpVariable(
+    "Vehicles_Ferry",
+    lowBound=0,
+    cat="Integer"
+)
+
+
+# ============================================================
+# 5. MODE CAPACITIES
+# ============================================================
+#
+# Passenger capacity PER VEHICLE/TRIP.
+#
+# Replace these with Lagos-specific empirical values where
+# available.
+# ============================================================
+
+cap_car = 2
+cap_bus = 30
+cap_train = 120
+cap_ferry = 30
+
+
+# ============================================================
+# 6. TRAVEL TIME
+# ============================================================
+#
+# Average travel time per passenger trip, in HOURS.
+#
+# These values should represent the relevant route/travel
+# conditions for each mode.
+# ============================================================
+
+t_car = 0.127
+t_bus = 0.230
+t_train = 0.350
+t_ferry = 0.282
+
+
+# ============================================================
+# 7. EMISSION FACTORS
+# ============================================================
+#
+# IMPORTANT:
+# These are assumed to be emissions PER VEHICLE/TRIP.
+#
+# International estimate.
+# ============================================================
+
+e_car = 1.0
+e_bus = 2.5
+e_train = 0.8
+e_ferry = 0.5
+
+
+# ============================================================
+# 8. ROAD PCU FACTORS
+# ============================================================
+#
+# One car = 1.0 PCU
+# One bus = 2.7 PCU
+# This is verified 
+# ============================================================
+
+PCU_CAR = 1.0
+PCU_BUS = 2.7
+
+
+# ============================================================
+# 9. ROUTE / INFRASTRUCTURE CAPACITIES
+# ============================================================
+#
+# IMPORTANT:
+# These capacities must correspond to the SAME DAILY
+# time period as the observed demand.
+#
+# ============================================================
+
+ROAD_CAPACITY_PCU = 200_000
+
+TRAIN_CAPACITY_PASSENGERS = 150_000
+
+FERRY_CAPACITY_PASSENGERS = 100_000
+
+
+# ============================================================
+# 10. PASSENGER DEMAND CONSTRAINT
+# ============================================================
+#
+# ALL 324,685 observed passengers must be redistributed
+# among car, bus, train and ferry.
+#
+# Therefore:
+#
+# car passengers
+# + bus passengers
+# + train passengers
+# + ferry passengers
+# = 324,685
+#
+# This is the central redistribution constraint.
+# ============================================================
+
+model += (
+    y_car
+    + y_bus
+    + y_train
+    + y_ferry
+    == TOTAL_PASSENGERS
+), "Total_Passenger_Demand"
+
+
+# ============================================================
+# 11. VEHICLE/TRIP CAPACITY CONSTRAINTS
+# ============================================================
+#
+# The number of passengers assigned to each mode cannot
+# exceed the carrying capacity of the required vehicles/trips.
+# ============================================================
+
+model += (
+    y_car <= cap_car * x_car
+), "Car_Capacity"
+
+model += (
+    y_bus <= cap_bus * x_bus
+), "Bus_Capacity"
+
+model += (
+    y_train <= cap_train * x_train
+), "Train_Capacity"
+
+model += (
+    y_ferry <= cap_ferry * x_ferry
+), "Ferry_Capacity"
+
+
+# ============================================================
+# 12. ROAD PCU CAPACITY
+# ============================================================
+#
+# Only CAR and BUS contribute to road traffic.
+#
+# Since the observed 129,874 vehicles contain an unknown
+# car/bus composition, we do NOT impose:
+#
+#     x_car + x_bus = 129,874
+#
+# Instead, 129,874 is treated as the BASELINE road-vehicle
+# count against which the optimized road traffic is compared.
+#
+# The optimized road traffic is constrained by the available
+# road PCU capacity.
+# ============================================================
+
+model += (
+    PCU_CAR * x_car
+    + PCU_BUS * x_bus
+    <= ROAD_CAPACITY_PCU
+), "Road_PCU_Capacity"
+
+
+# ============================================================
+# 13. RAIL CAPACITY
+# ============================================================
+
+model += (
+    y_train <= TRAIN_CAPACITY_PASSENGERS
+), "Train_Route_Capacity"
+
+
+# ============================================================
+# 14. FERRY CAPACITY
+# ============================================================
+
+model += (
+    y_ferry <= FERRY_CAPACITY_PASSENGERS
+), "Ferry_Route_Capacity"
+
+
+# ============================================================
+# 15. PASSENGER TRAVEL TIME
+# ============================================================
+#
+# Travel time is calculated from ACTUAL PASSENGERS assigned
+# to each mode.
+#
+# Units = passenger-hours/day
+# ============================================================
+
+travel_time = (
+    t_car * y_car
+    + t_bus * y_bus
+    + t_train * y_train
+    + t_ferry * y_ferry
+)
+
+
+# ============================================================
+# 16. OPTIMIZED ROAD TRAFFIC LOAD
+# ============================================================
+#
+# Only cars and buses contribute to road PCU.
+# ============================================================
+
+road_pcu = (
+    PCU_CAR * x_car
+    + PCU_BUS * x_bus
+)
+
+
+# ============================================================
+# 17. TOTAL VEHICLE-BASED EMISSIONS
+# ============================================================
+
+emissions = (
+    e_car * x_car
+    + e_bus * x_bus
+    + e_train * x_train
+    + e_ferry * x_ferry
+)
+
+
+# ============================================================
+# 18. OBJECTIVE WEIGHTS
+# ============================================================
+#
+# Travel time has the highest policy weight.
+#
+# alpha = congestion / road traffic
+# beta  = emissions
+# gamma = passenger travel time
+#
+# The weights must sum to 1.
+# ============================================================
+
+alpha = 0.25
+beta = 0.25
+gamma = 0.50
+
+
+# ============================================================
+# 19. NORMALIZATION
+# ============================================================
+#
+# The three objectives have different units:
+#
+#   PCU
+#   emissions
+#   passenger-hours
+#
+# Therefore they are normalized before being combined.
+#
+# The observed 129,874 road vehicles is used as the
+# BASELINE road-traffic reference.
+#
+# It is NOT treated as a fixed optimized number.
+# ============================================================
+
+MAX_ROAD_PCU = (
+    TOTAL_ROAD_VEHICLES * PCU_BUS
+)
+
+MAX_EMISSIONS = (
+    max(
+        e_car,
+        e_bus,
+        e_train,
+        e_ferry
+    )
+    * TOTAL_ROAD_VEHICLES
+)
+
+MAX_TRAVEL_TIME = (
+    max(
+        t_car,
+        t_bus,
+        t_train,
+        t_ferry
+    )
+    * TOTAL_PASSENGERS
+)
+
+
+normalized_road_pcu = (
+    road_pcu / MAX_ROAD_PCU
+)
+
+normalized_emissions = (
+    emissions / MAX_EMISSIONS
+)
+
+normalized_travel_time = (
+    travel_time / MAX_TRAVEL_TIME
+)
+
+
+# ============================================================
+# 20. WEIGHTED MULTI-OBJECTIVE FUNCTION
+# ============================================================
+
+model += (
+    alpha * normalized_road_pcu
+    + beta * normalized_emissions
+    + gamma * normalized_travel_time
+), "Weighted_Multi_Objective"
+
+
+# ============================================================
+# 21. SOLVE
+# ============================================================
+
+solver = pulp.PULP_CBC_CMD(msg=True)
+
+model.solve(solver)
+
+
+# ============================================================
+# 22. RESULTS
+# ============================================================
+
+print("\n==============================================")
+print("OPTIMIZATION STATUS")
+print("==============================================")
+
+print(
+    "Status:",
+    pulp.LpStatus[model.status]
+)
+
+
+if pulp.LpStatus[model.status] == "Optimal":
+
+    # ========================================================
+    # PASSENGER ALLOCATION
+    # ========================================================
+
+    print("\n==============================================")
+    print("OPTIMAL PASSENGER ALLOCATION")
+    print("==============================================")
+
+    print(
+        f"Car passengers:   {y_car.value():,.0f}"
+    )
+
+    print(
+        f"Bus passengers:   {y_bus.value():,.0f}"
+    )
+
+    print(
+        f"Train passengers: {y_train.value():,.0f}"
+    )
+
+    print(
+        f"Ferry passengers: {y_ferry.value():,.0f}"
+    )
+
+    print(
+        f"Total passengers: "
+        f"{(
+            y_car.value()
+            + y_bus.value()
+            + y_train.value()
+            + y_ferry.value()
+        ):,.0f}"
+    )
+
+
+    # ========================================================
+    # VEHICLE/TRIP ALLOCATION
+    # ========================================================
+
+    print("\n==============================================")
+    print("OPTIMAL VEHICLE/TRIP ALLOCATION")
+    print("==============================================")
+
+    print(
+        f"Cars:    {x_car.value():,.0f}"
+    )
+
+    print(
+        f"Buses:   {x_bus.value():,.0f}"
+    )
+
+    print(
+        f"Trains:  {x_train.value():,.0f}"
+    )
+
+    print(
+        f"Ferries: {x_ferry.value():,.0f}"
+    )
+
+
+    # ========================================================
+    # ROAD TRAFFIC REDISTRIBUTION
+    # ========================================================
+
+    optimized_road_vehicles = (
+        x_car.value()
+        + x_bus.value()
+    )
+
+    road_vehicle_change = (
+        optimized_road_vehicles
+        - TOTAL_ROAD_VEHICLES
+    )
+
+    road_vehicle_reduction = (
+        TOTAL_ROAD_VEHICLES
+        - optimized_road_vehicles
+    )
+
+    road_vehicle_reduction_pct = (
+        100
+        * road_vehicle_reduction
+        / TOTAL_ROAD_VEHICLES
+    )
+
+
+    print("\n==============================================")
+    print("ROAD TRAFFIC REDISTRIBUTION")
+    print("==============================================")
+
+    print(
+        f"Observed baseline road vehicles: "
+        f"{TOTAL_ROAD_VEHICLES:,.0f}"
+    )
+
+    print(
+        f"Optimized road vehicles: "
+        f"{optimized_road_vehicles:,.0f}"
+    )
+
+    print(
+        f"Change in road vehicles: "
+        f"{road_vehicle_change:,.0f}"
+    )
+
+    print(
+        f"Road vehicle reduction: "
+        f"{road_vehicle_reduction:,.0f}"
+    )
+
+    print(
+        f"Road vehicle reduction (%): "
+        f"{road_vehicle_reduction_pct:.2f}%"
+    )
+
+
+    # ========================================================
+    # PASSENGER DISTRIBUTION
+    # ========================================================
+
+    total_road_passengers = (
+        y_car.value()
+        + y_bus.value()
+    )
+
+    print("\n==============================================")
+    print("TRAFFIC / PASSENGER DISTRIBUTION")
+    print("==============================================")
+
+    print(
+        f"Road passengers:  "
+        f"{total_road_passengers:,.0f}"
+    )
+
+    print(
+        f"Rail passengers:  "
+        f"{y_train.value():,.0f}"
+    )
+
+    print(
+        f"Water passengers: "
+        f"{y_ferry.value():,.0f}"
+    )
+
+
+    # ========================================================
+    # ROAD PCU
+    # ========================================================
+
+    car_pcu = (
+        x_car.value() * PCU_CAR
+    )
+
+    bus_pcu = (
+        x_bus.value() * PCU_BUS
+    )
+
+    total_road_pcu = (
+        car_pcu + bus_pcu
+    )
+
+
+    print("\n==============================================")
+    print("ROAD PCU")
+    print("==============================================")
+
+    print(
+        f"Car PCU:        {car_pcu:,.0f}"
+    )
+
+    print(
+        f"Bus PCU:        {bus_pcu:,.0f}"
+    )
+
+    print(
+        f"Total road PCU: {total_road_pcu:,.0f}"
+    )
+
+    print(
+        f"Road PCU capacity: "
+        f"{ROAD_CAPACITY_PCU:,.0f}"
+    )
+
+    print(
+        f"Remaining road PCU capacity: "
+        f"{ROAD_CAPACITY_PCU - total_road_pcu:,.0f}"
+    )
+
+
+    # ========================================================
+    # MODAL PASSENGER SHARES
+    # ========================================================
+
+    print("\n==============================================")
+    print("MODAL PASSENGER SHARES")
+    print("==============================================")
+
+    print(
+        f"Car share:   "
+        f"{100 * y_car.value() / TOTAL_PASSENGERS:.2f}%"
+    )
+
+    print(
+        f"Bus share:   "
+        f"{100 * y_bus.value() / TOTAL_PASSENGERS:.2f}%"
+    )
+
+    print(
+        f"Train share: "
+        f"{100 * y_train.value() / TOTAL_PASSENGERS:.2f}%"
+    )
+
+    print(
+        f"Ferry share: "
+        f"{100 * y_ferry.value() / TOTAL_PASSENGERS:.2f}%"
+    )
+
+
+    # ========================================================
+    # ROAD VEHICLE COMPOSITION
+    # ========================================================
+    #
+    # This is the MODELLED composition, not an observed
+    # composition, because the original data do not distinguish
+    # cars from buses.
+    # ========================================================
+
+    if optimized_road_vehicles > 0:
+
+        car_vehicle_share = (
+            100
+            * x_car.value()
+            / optimized_road_vehicles
+        )
+
+        bus_vehicle_share = (
+            100
+            * x_bus.value()
+            / optimized_road_vehicles
+        )
+
+    else:
+
+        car_vehicle_share = 0
+        bus_vehicle_share = 0
+
+
+    print("\n==============================================")
+    print("OPTIMIZED ROAD VEHICLE COMPOSITION")
+    print("==============================================")
+
+    print(
+        f"Car vehicles: "
+        f"{x_car.value():,.0f} "
+        f"({car_vehicle_share:.2f}%)"
+    )
+
+    print(
+        f"Bus vehicles: "
+        f"{x_bus.value():,.0f} "
+        f"({bus_vehicle_share:.2f}%)"
+    )
+
+    print(
+        "\nNote: The car/bus composition above is "
+        "an optimization result, not an observed "
+        "baseline composition."
+    )
+
+
+    # ========================================================
+    # PERFORMANCE INDICATORS
+    # ========================================================
+
+    total_passenger_hours = (
+        travel_time.value()
+    )
+
+    average_travel_time_hours = (
+        total_passenger_hours
+        / TOTAL_PASSENGERS
+    )
+
+    average_travel_time_minutes = (
+        60
+        * average_travel_time_hours
+    )
+
+
+    print("\n==============================================")
+    print("PERFORMANCE INDICATORS")
+    print("==============================================")
+
+    print(
+        f"Total passenger-hours: "
+        f"{total_passenger_hours:,.2f}"
+    )
+
+    print(
+        f"Average passenger travel time: "
+        f"{average_travel_time_hours:.4f} hours"
+    )
+
+    print(
+        f"Average passenger travel time: "
+        f"{average_travel_time_minutes:.2f} minutes"
+    )
+
+    print(
+        f"Total emissions indicator: "
+        f"{emissions.value():,.2f}"
+    )
+
+    print(
+        f"Objective value: "
+        f"{pulp.value(model.objective):,.6f}"
+    )
+
+
+else:
+
+    print("\nNo optimal solution was found.")
